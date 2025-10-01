@@ -1,0 +1,138 @@
+# MinIO Helm Chart Configuration Example
+# This example shows how to configure MinIO with Keycloak OIDC integration
+
+minio:
+  # Image configuration - use official MinIO image
+  image:
+    repository: quay.io/minio/minio
+    tag: RELEASE.2025-09-07T16-13-09Z
+    pullPolicy: IfNotPresent
+
+  # Deployment mode
+  mode: standalone
+  replicas: 1
+  drivesPerNode: 1
+
+  # Use existing secret for root credentials
+  existingSecret: minio-credentials
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: "9000"
+
+  consoleService:
+    type: ClusterIP
+    port: "9001"
+
+  # Ingress configuration for API
+  ingress:
+    enabled: true
+    ingressClassName: nginx  # or your ingress class
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - minio-api.example.com
+    tls:
+      - secretName: minio-api-tls
+        hosts:
+          - minio-api.example.com
+
+  # Ingress configuration for Console
+  consoleIngress:
+    enabled: true
+    ingressClassName: nginx  # or your ingress class
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - minio-console.example.com
+    tls:
+      - secretName: minio-console-tls
+        hosts:
+          - minio-console.example.com
+
+  # Persistence configuration
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: fast-ssd  # adjust to your storage class
+
+  # Resource limits
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: 500m
+    limits:
+      memory: 2Gi
+      cpu: 1000m
+
+  # OIDC Configuration - THIS IS THE KEY PART
+  oidc:
+    enabled: true
+    configUrl: "https://keycloak.example.com/auth/realms/minio/.well-known/openid-configuration"
+    clientId: "minio-client"
+    existingClientSecretName: "minio-oidc-secret"
+    existingClientSecretKey: "client-secret"
+    claimName: "policy"  # Keycloak claim containing MinIO policy names
+    comment: "OIDC Authentication for MinIO"
+    scopes: "openid,profile,email,groups"
+    redirectUri: "https://minio-console.example.com/oauth_callback"
+    displayName: "Keycloak SSO"
+
+  # MinIO Policies - must match Keycloak groups
+  policies:
+    - name: AdminPolicy
+      statements:
+        - effect: Allow
+          resources:
+            - 'arn:aws:s3:::*'
+          actions:
+            - "s3:*"
+        - effect: Allow
+          resources:
+            - 'arn:aws:s3:::*/*'
+          actions:
+            - "s3:*"
+    
+    - name: ReadWritePolicy
+      statements:
+        - effect: Allow
+          resources:
+            - 'arn:aws:s3:::data/*'
+            - 'arn:aws:s3:::backup/*'
+          actions:
+            - "s3:GetObject"
+            - "s3:PutObject"
+            - "s3:DeleteObject"
+        - effect: Allow
+          resources:
+            - 'arn:aws:s3:::data'
+            - 'arn:aws:s3:::backup'
+          actions:
+            - "s3:ListBucket"
+
+  # Default buckets to create
+  buckets:
+    - name: data
+      policy: none
+      purge: false
+    - name: backup
+      policy: none
+      purge: false
+
+  # Security context
+  securityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+# External Secrets configuration (if using external secret management)
+externalSecrets:
+  enabled: true
+  secretStore: your-secret-store  # e.g., vault-backend, aws-secrets-manager
+  credentials:
+    rootUserPath: "path/to/minio/root/user"
+    rootPasswordPath: "path/to/minio/root/password"
+  oidc:
+    clientSecretPath: "path/to/minio/oidc/client/secret"
